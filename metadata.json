@@ -1,0 +1,6 @@
+{
+  "name": "Quick PDF Tools",
+  "description": "A modern, responsive, browser-based PDF utility app for merging, splitting, compressing, and modifying PDFs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
