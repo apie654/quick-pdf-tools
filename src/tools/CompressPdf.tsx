@@ -2,7 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { FileUploader } from "../components/FileUploader";
 import { Button } from "../components/ui/button";
 import { formatBytes } from "../lib/utils";
-import { CheckCircle2, Download, FileText, LoaderCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  Info,
+  Download,
+  FileText,
+  LoaderCircle,
+} from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 import {
   compressPdf,
@@ -14,7 +20,7 @@ export function CompressPdf() {
   const { language, t } = useLanguage();
   const ms = language === "ms";
   const [file, setFile] = useState<File | null>(null);
-  const [preset, setPreset] = useState<CompressionPreset>("text");
+  const [preset, setPreset] = useState<CompressionPreset>("balanced");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [result, setResult] = useState<CompressionResult | null>(null);
@@ -72,6 +78,8 @@ export function CompressPdf() {
       detail: "160 DPI · JPEG 82%",
     },
   ];
+  const orderedOptions = [options[1], options[0], options[2], options[3]];
+  const selectedOption = options.find((option) => option.id === preset)!;
   const run = async () => {
     if (!file || busy) return;
     const abort = new AbortController();
@@ -117,8 +125,8 @@ export function CompressPdf() {
         <h1 className="text-3xl mb-3">{t.compressPdf}</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
           {ms
-            ? "Pilih keseimbangan yang sesuai untuk dokumen anda. Hasil paling kecil dipilih secara automatik."
-            : "Choose the right balance for your document. We automatically keep the smallest result."}
+            ? "Seimbang dipilih secara awal untuk mengecilkan scan dan gambar. Pilih Kekalkan teks jika perlu carian atau salinan teks."
+            : "Balanced is selected by default to shrink scans and images. Choose Keep text if you need searchable or selectable text."}
         </p>
       </div>
       {!file ? (
@@ -128,21 +136,29 @@ export function CompressPdf() {
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-9"
           aria-live="polite"
         >
-          <CheckCircle2 size={30} className="text-blue-600 mb-5" />
+          {reduced ? (
+            <CheckCircle2 size={30} className="text-blue-600 mb-5" />
+          ) : (
+            <Info size={30} className="text-slate-500 mb-5" />
+          )}
           <h2 className="text-2xl font-medium">
             {reduced
               ? ms
                 ? "Lebih kecil. Sedia dikongsi."
                 : "Smaller. Ready to share."
               : ms
-                ? "Fail ini sudah efisien."
-                : "Already a compact file."}
+                ? "Tiada pengurangan dengan tetapan ini."
+                : "No reduction with these settings."}
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
             {!reduced
               ? ms
-                ? "Tetapan ini tidak menghasilkan fail lebih kecil. Fail asal dikekalkan. Cuba preset lain jika perlu."
-                : "These settings did not produce a smaller PDF. Your original is kept. Try another preset if needed."
+                ? preset === "text"
+                  ? "Mod Kekalkan teks tidak mengecilkan imej scan. Cuba Seimbang atau Saiz paling kecil. Fail asal dikekalkan."
+                  : "Preset ini belum menghasilkan fail lebih kecil. Ini tidak bermaksud fail sudah optimum. Fail asal dikekalkan; cuba preset lain."
+                : preset === "text"
+                  ? "Keep text does not shrink scanned images. Try Balanced or Smallest size. Your original is kept."
+                  : "This preset did not produce a smaller PDF. This does not mean the file is fully optimised. Your original is kept; try another preset."
               : result.method === "image"
                 ? ms
                   ? "Halaman disimpan sebagai gambar. Semak kejelasan sebelum berkongsi."
@@ -150,6 +166,10 @@ export function CompressPdf() {
                 : ms
                   ? "Struktur PDF dioptimumkan. Teks dan kualiti visual dikekalkan."
                   : "PDF structure optimised. Text and visual quality are preserved."}
+          </p>
+          <p className="text-xs text-blue-600 mt-4">
+            {ms ? "Preset digunakan" : "Preset used"}:{" "}
+            <strong>{selectedOption.title}</strong> · {selectedOption.detail}
           </p>
           <div className="result-stats">
             <div>
@@ -180,6 +200,23 @@ export function CompressPdf() {
               <Download size={16} className="mr-2" />
               {ms ? "Muat turun PDF" : "Download PDF"}
             </a>
+            {!reduced && preset !== "strong" && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPreset(preset === "text" ? "balanced" : "strong");
+                  setResult(null);
+                }}
+              >
+                {preset === "text"
+                  ? ms
+                    ? "Cuba Seimbang"
+                    : "Try Balanced"
+                  : ms
+                    ? "Cuba Saiz paling kecil"
+                    : "Try Smallest size"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setResult(null)}>
               {ms ? "Cuba tetapan lain" : "Try other settings"}
             </Button>
@@ -224,7 +261,7 @@ export function CompressPdf() {
               role="radiogroup"
               aria-label={ms ? "Preset compression" : "Compression preset"}
             >
-              {options.map((option) => (
+              {orderedOptions.map((option) => (
                 <button
                   type="button"
                   role="radio"
