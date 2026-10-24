@@ -20,7 +20,7 @@ export function CompressPdf() {
   const { language, t } = useLanguage();
   const ms = language === "ms";
   const [file, setFile] = useState<File | null>(null);
-  const [preset, setPreset] = useState<CompressionPreset>("balanced");
+  const [preset, setPreset] = useState<CompressionPreset>("medium");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [result, setResult] = useState<CompressionResult | null>(null);
@@ -44,41 +44,32 @@ export function CompressPdf() {
     detail: string;
   }[] = [
     {
-      id: "text",
-      title: ms ? "Kekalkan teks" : "Keep text",
+      id: "small",
+      title: "Small",
       desc: ms
-        ? "Untuk surat, borang dan PDF digital. Teks, pautan dan kualiti asal dikekalkan."
-        : "For letters, forms and digital PDFs. Keeps text, links and original visual quality.",
+        ? "Compression minimum. Utamakan kejelasan tulisan dan butiran gambar."
+        : "Minimum compression. Prioritises clear text and image detail.",
+      detail: ms ? "Kualiti diutamakan" : "Quality first",
+    },
+    {
+      id: "medium",
+      title: "Medium",
+      desc: ms
+        ? "Compression sederhana. Seimbangkan saiz fail dengan kejelasan dokumen."
+        : "Moderate compression. Balances file size and document clarity.",
       detail: ms
-        ? "Tanpa kehilangan kualiti · Pengurangan terhad untuk scan"
-        : "Lossless · Limited savings for scans",
+        ? "Disyorkan untuk kegunaan harian"
+        : "Recommended for everyday use",
     },
     {
-      id: "balanced",
-      title: ms ? "Seimbang" : "Balanced",
+      id: "high",
+      title: "High",
       desc: ms
-        ? "Untuk dokumen scan dan gambar. Seimbangkan kejelasan dan saiz fail."
-        : "For scanned documents and images. A practical balance of clarity and file size.",
-      detail: "120 DPI · JPEG 65%",
-    },
-    {
-      id: "strong",
-      title: ms ? "Saiz paling kecil" : "Smallest size",
-      desc: ms
-        ? "Untuk perkongsian. Teks kecil dan gambar mungkin kurang jelas."
-        : "For easy sharing. Small text and fine image details may lose clarity.",
-      detail: "85 DPI · JPEG 42%",
-    },
-    {
-      id: "clear",
-      title: ms ? "Lebih jelas" : "Higher clarity",
-      desc: ms
-        ? "Untuk scan dengan tulisan kecil atau butiran penting. Fail mungkin lebih besar."
-        : "For scans with small print or important details. May produce larger files.",
-      detail: "160 DPI · JPEG 82%",
+        ? "Compression maksimum. Utamakan saiz kecil; tulisan halus mungkin kurang jelas."
+        : "Maximum compression. Prioritises a smaller file; fine text may lose clarity.",
+      detail: ms ? "Saiz fail diutamakan" : "File size first",
     },
   ];
-  const orderedOptions = [options[1], options[0], options[2], options[3]];
   const selectedOption = options.find((option) => option.id === preset)!;
   const run = async () => {
     if (!file || busy) return;
@@ -104,8 +95,8 @@ export function CompressPdf() {
               ? "PDF dilindungi kata laluan. Buka kuncinya dahulu sebelum cuba lagi."
               : "This PDF is password protected. Unlock a copy before trying again."
             : ms
-              ? "PDF tidak dapat diproses. Pastikan fail sah dan tidak dilindungi kata laluan. Untuk fail besar, cuba mod Kekalkan teks."
-              : "Could not process this PDF. Check it is valid and unlocked. For large files, try Keep text mode.",
+              ? "PDF tidak dapat diproses. Pastikan fail sah dan tidak dilindungi kata laluan, kemudian cuba lagi."
+              : "Could not process this PDF. Check it is valid and unlocked, then try again.",
         );
       }
     } finally {
@@ -125,8 +116,8 @@ export function CompressPdf() {
         <h1 className="text-3xl mb-3">{t.compressPdf}</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
           {ms
-            ? "Seimbang dipilih secara awal untuk mengecilkan scan dan gambar. Pilih Kekalkan teks jika perlu carian atau salinan teks."
-            : "Balanced is selected by default to shrink scans and images. Choose Keep text if you need searchable or selectable text."}
+            ? "Pilih tahap compression: Small untuk minimum, Medium untuk sederhana, atau High untuk maksimum. Medium dipilih secara awal."
+            : "Choose your compression level: Small for minimum, Medium for moderate, or High for maximum. Medium is selected by default."}
         </p>
       </div>
       {!file ? (
@@ -153,12 +144,8 @@ export function CompressPdf() {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
             {!reduced
               ? ms
-                ? preset === "text"
-                  ? "Mod Kekalkan teks tidak mengecilkan imej scan. Cuba Seimbang atau Saiz paling kecil. Fail asal dikekalkan."
-                  : "Preset ini belum menghasilkan fail lebih kecil. Ini tidak bermaksud fail sudah optimum. Fail asal dikekalkan; cuba preset lain."
-                : preset === "text"
-                  ? "Keep text does not shrink scanned images. Try Balanced or Smallest size. Your original is kept."
-                  : "This preset did not produce a smaller PDF. This does not mean the file is fully optimised. Your original is kept; try another preset."
+                ? "Tahap ini belum menghasilkan fail lebih kecil. Fail asal dikekalkan. Cuba tahap lebih tinggi jika ada."
+                : "This level did not produce a smaller PDF. Your original is kept. Try a higher level if available."
               : result.method === "image"
                 ? ms
                   ? "Halaman disimpan sebagai gambar. Semak kejelasan sebelum berkongsi."
@@ -168,7 +155,7 @@ export function CompressPdf() {
                   : "PDF structure optimised. Text and visual quality are preserved."}
           </p>
           <p className="text-xs text-blue-600 mt-4">
-            {ms ? "Preset digunakan" : "Preset used"}:{" "}
+            {ms ? "Tahap digunakan" : "Level used"}:{" "}
             <strong>{selectedOption.title}</strong> · {selectedOption.detail}
           </p>
           <div className="result-stats">
@@ -200,21 +187,16 @@ export function CompressPdf() {
               <Download size={16} className="mr-2" />
               {ms ? "Muat turun PDF" : "Download PDF"}
             </a>
-            {!reduced && preset !== "strong" && (
+            {!reduced && preset !== "high" && (
               <Button
                 variant="outline"
                 onClick={() => {
-                  setPreset(preset === "text" ? "balanced" : "strong");
+                  setPreset(preset === "small" ? "medium" : "high");
                   setResult(null);
                 }}
               >
-                {preset === "text"
-                  ? ms
-                    ? "Cuba Seimbang"
-                    : "Try Balanced"
-                  : ms
-                    ? "Cuba Saiz paling kecil"
-                    : "Try Smallest size"}
+                {ms ? "Cuba tahap " : "Try "}
+                {preset === "small" ? "Medium" : "High"}
               </Button>
             )}
             <Button variant="outline" onClick={() => setResult(null)}>
@@ -254,14 +236,14 @@ export function CompressPdf() {
           </div>
           <fieldset disabled={busy}>
             <legend className="text-sm font-medium mb-3">
-              {ms ? "Tetapan compression" : "Compression settings"}
+              {ms ? "Tahap compression" : "Compression level"}
             </legend>
             <div
               className="compression-options"
               role="radiogroup"
-              aria-label={ms ? "Preset compression" : "Compression preset"}
+              aria-label={ms ? "Tahap compression" : "Compression level"}
             >
-              {orderedOptions.map((option) => (
+              {options.map((option) => (
                 <button
                   type="button"
                   role="radio"
@@ -278,13 +260,9 @@ export function CompressPdf() {
             </div>
           </fieldset>
           <p className="compression-notice">
-            {preset === "text"
-              ? ms
-                ? "Mod ini tidak mengecilkan gambar scan. Gunakan Seimbang atau Saiz paling kecil untuk scan. Tiada peratus pengurangan yang dijamin."
-                : "This mode does not shrink scanned images. Use Balanced or Smallest size for scans. Savings depend on the original PDF."
-              : ms
-                ? "Halaman ditukar kepada gambar: teks tidak lagi boleh dicari atau dipilih; pautan, borang dan tandatangan digital tidak dikekalkan. Saiz fizikal halaman kekal sama."
-                : "Pages become images: text will no longer be searchable or selectable; links, forms and digital signatures are not preserved. Physical page size stays the same."}
+            {ms
+              ? "Compression mengurangkan resolusi dan kualiti imej. High memberi pengurangan paling kuat tetapi boleh mengurangkan kejelasan. Halaman menjadi gambar: teks tidak lagi boleh dicari atau dipilih; pautan, borang dan tandatangan digital tidak dikekalkan."
+              : "Compression reduces image resolution and quality. High applies the strongest reduction but may reduce clarity. Pages become images: text will no longer be searchable or selectable; links, forms and digital signatures are not preserved."}
           </p>
           {error && (
             <p
