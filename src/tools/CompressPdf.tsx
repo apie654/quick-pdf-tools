@@ -1,369 +1,295 @@
-import React, { useState } from 'react';
-import { PDFDocument } from 'pdf-lib';
-import { jsPDF } from 'jspdf';
-import { pdfjs } from 'react-pdf';
-import { FileUploader } from '../components/FileUploader';
-import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
-import { formatBytes, downloadFile } from '../lib/utils';
-import { ShieldAlert, Zap, Layers, CheckCircle2, Download, RefreshCw, AlertTriangle, Info } from 'lucide-react';
-import { useLanguage } from '../contexts/LanguageContext';
-
-// Initialize PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+import React, { useEffect, useRef, useState } from "react";
+import { FileUploader } from "../components/FileUploader";
+import { Button } from "../components/ui/button";
+import { formatBytes } from "../lib/utils";
+import { CheckCircle2, Download, FileText, LoaderCircle } from "lucide-react";
+import { useLanguage } from "../contexts/LanguageContext";
+import {
+  compressPdf,
+  CompressionPreset,
+  CompressionResult,
+} from "../lib/compression";
 
 export function CompressPdf() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const ms = language === "ms";
   const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [originalSize, setOriginalSize] = useState(0);
-  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
-  
-  // Custom states
-  const [mode, setMode] = useState<'basic' | 'image'>('basic');
-  const [quality, setQuality] = useState<number>(0.65); // Default Medium
-  const [scale, setScale] = useState<number>(1.5); // Default Medium
-  const [currentProgress, setCurrentProgress] = useState<{ current: number; total: number } | null>(null);
-
-  const handleFileSelect = (files: File[]) => {
-    setFile(files[0]);
-    setOriginalSize(files[0].size);
-    setResultBlob(null);
-  };
-
-  const processCompress = async () => {
-    if (!file) return;
-    setIsProcessing(true);
-    setCurrentProgress(null);
-
+  const [preset, setPreset] = useState<CompressionPreset>("text");
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [result, setResult] = useState<CompressionResult | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState("");
+  useEffect(() => {
+    if (!result) {
+      setDownloadUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(result.blob);
+    setDownloadUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [result]);
+  const [error, setError] = useState("");
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
+  const options: {
+    id: CompressionPreset;
+    title: string;
+    desc: string;
+    detail: string;
+  }[] = [
+    {
+      id: "text",
+      title: ms ? "Kekalkan teks" : "Keep text",
+      desc: ms
+        ? "Untuk surat, borang dan PDF digital. Teks, pautan dan kualiti asal dikekalkan."
+        : "For letters, forms and digital PDFs. Keeps text, links and original visual quality.",
+      detail: ms
+        ? "Tanpa kehilangan kualiti · Pengurangan terhad untuk scan"
+        : "Lossless · Limited savings for scans",
+    },
+    {
+      id: "balanced",
+      title: ms ? "Seimbang" : "Balanced",
+      desc: ms
+        ? "Untuk dokumen scan dan gambar. Seimbangkan kejelasan dan saiz fail."
+        : "For scanned documents and images. A practical balance of clarity and file size.",
+      detail: "120 DPI · JPEG 65%",
+    },
+    {
+      id: "strong",
+      title: ms ? "Saiz paling kecil" : "Smallest size",
+      desc: ms
+        ? "Untuk perkongsian. Teks kecil dan gambar mungkin kurang jelas."
+        : "For easy sharing. Small text and fine image details may lose clarity.",
+      detail: "85 DPI · JPEG 42%",
+    },
+    {
+      id: "clear",
+      title: ms ? "Lebih jelas" : "Higher clarity",
+      desc: ms
+        ? "Untuk scan dengan tulisan kecil atau butiran penting. Fail mungkin lebih besar."
+        : "For scans with small print or important details. May produce larger files.",
+      detail: "160 DPI · JPEG 82%",
+    },
+  ];
+  const run = async () => {
+    if (!file || busy) return;
+    const abort = new AbortController();
+    controller.current = abort;
+    setBusy(true);
+    setError("");
+    setProgress({ current: 0, total: 0 });
     try {
-      if (mode === 'basic') {
-        // Basic optimization: re-saves the PDF structure without metadata/streams
-        const fileBuffer = await file.arrayBuffer();
-        const pdfDoc = await PDFDocument.load(fileBuffer);
-        const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
-        setResultBlob(new Blob([pdfBytes], { type: 'application/pdf' }));
-      } else {
-        // Image-based compression
-        const fileBuffer = await file.arrayBuffer();
-        
-        // Load document via PDF.js
-        const loadingTask = pdfjs.getDocument({ data: fileBuffer });
-        const pdfDoc = await loadingTask.promise;
-        const total = pdfDoc.numPages;
-
-        if (total === 0) {
-          throw new Error('PDF has no pages');
-        }
-
-        // Get first page to define initial jsPDF document format
-        const firstPage = await pdfDoc.getPage(1);
-        const firstViewport = firstPage.getViewport({ scale: scale });
-        
-        const pdf = new jsPDF({
-          orientation: firstViewport.width > firstViewport.height ? 'l' : 'p',
-          unit: 'pt',
-          format: [firstViewport.width, firstViewport.height]
-        });
-
-        for (let i = 1; i <= total; i++) {
-          setCurrentProgress({ current: i, total });
-          
-          let page;
-          let viewport;
-          
-          if (i === 1) {
-            page = firstPage;
-            viewport = firstViewport;
-          } else {
-            page = await pdfDoc.getPage(i);
-            viewport = page.getViewport({ scale: scale });
-            pdf.addPage([viewport.width, viewport.height], viewport.width > viewport.height ? 'l' : 'p');
-          }
-
-          // Offscreen canvas to render the PDF page
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          
-          const context = canvas.getContext('2d');
-          if (!context) {
-            throw new Error('Could not create 2D canvas context');
-          }
-
-          // Render PDF page into canvas context
-          await page.render({
-            canvasContext: context,
-            viewport: viewport
-          }).promise;
-
-          // Convert page image to JPEG with selected quality
-          const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(imgData, 'JPEG', 0, 0, viewport.width, viewport.height);
-        }
-
-        const pdfOutput = pdf.output('blob');
-        setResultBlob(pdfOutput);
+      const output = await compressPdf(
+        file,
+        preset,
+        (current, total) => setProgress({ current, total }),
+        abort.signal,
+      );
+      if (!abort.signal.aborted) setResult(output);
+    } catch (err) {
+      if (!abort.signal.aborted) {
+        const name = err instanceof Error ? err.name : "";
+        setError(
+          name.includes("Password") || name.includes("Encrypted")
+            ? ms
+              ? "PDF dilindungi kata laluan. Buka kuncinya dahulu sebelum cuba lagi."
+              : "This PDF is password protected. Unlock a copy before trying again."
+            : ms
+              ? "PDF tidak dapat diproses. Pastikan fail sah dan tidak dilindungi kata laluan. Untuk fail besar, cuba mod Kekalkan teks."
+              : "Could not process this PDF. Check it is valid and unlocked. For large files, try Keep text mode.",
+        );
       }
-    } catch (error) {
-      console.error('Compression failed', error);
-      alert(t.compressError || 'Failed to compress PDF. Please try again.');
     } finally {
-      setIsProcessing(false);
-      setCurrentProgress(null);
+      if (!abort.signal.aborted) setBusy(false);
     }
   };
-
-  const handleReset = () => {
-    setFile(null);
-    setOriginalSize(0);
-    setResultBlob(null);
-    setMode('basic');
-    setQuality(0.65);
-    setScale(1.5);
-    setCurrentProgress(null);
+  const select = (files: File[]) => {
+    setFile(files[0]);
+    setResult(null);
+    setError("");
   };
-
-  const reductionPercentage = resultBlob
-    ? Math.max(0, Math.round(((originalSize - resultBlob.size) / originalSize) * 100))
-    : 0;
-
-  const isLargerThanOriginal = resultBlob && resultBlob.size > originalSize;
-
-  if (resultBlob) {
-    return (
-      <div className="max-w-4xl mx-auto p-4 space-y-6">
-        <div className="flex flex-col items-center justify-center p-8 bg-emerald-50 dark:bg-emerald-950/10 border-2 border-emerald-200 dark:border-emerald-800 rounded-2xl text-center">
-          <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
-            Compression Complete!
-          </h3>
-          <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md">
-            Your optimized PDF document is ready for download.
+  const reduced = result && file ? result.blob.size < file.size : false;
+  const saving = result && file ? (1 - result.blob.size / file.size) * 100 : 0;
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-3xl mb-3">{t.compressPdf}</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+          {ms
+            ? "Pilih keseimbangan yang sesuai untuk dokumen anda. Hasil paling kecil dipilih secara automatik."
+            : "Choose the right balance for your document. We automatically keep the smallest result."}
+        </p>
+      </div>
+      {!file ? (
+        <FileUploader onFileSelect={select} />
+      ) : result ? (
+        <section
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-9"
+          aria-live="polite"
+        >
+          <CheckCircle2 size={30} className="text-blue-600 mb-5" />
+          <h2 className="text-2xl font-medium">
+            {reduced
+              ? ms
+                ? "Lebih kecil. Sedia dikongsi."
+                : "Smaller. Ready to share."
+              : ms
+                ? "Fail ini sudah efisien."
+                : "Already a compact file."}
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
+            {!reduced
+              ? ms
+                ? "Tetapan ini tidak menghasilkan fail lebih kecil. Fail asal dikekalkan. Cuba preset lain jika perlu."
+                : "These settings did not produce a smaller PDF. Your original is kept. Try another preset if needed."
+              : result.method === "image"
+                ? ms
+                  ? "Halaman disimpan sebagai gambar. Semak kejelasan sebelum berkongsi."
+                  : "Pages were saved as images. Check readability before sharing."
+                : ms
+                  ? "Struktur PDF dioptimumkan. Teks dan kualiti visual dikekalkan."
+                  : "PDF structure optimised. Text and visual quality are preserved."}
           </p>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full max-w-lg bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 mb-8 shadow-sm">
-            <div className="flex flex-col items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Original Size</span>
-              <span className="text-lg font-bold text-slate-700 dark:text-slate-300 mt-1">{formatBytes(originalSize)}</span>
+          <div className="result-stats">
+            <div>
+              <span>{ms ? "Saiz asal" : "Original"}</span>
+              <strong>{formatBytes(file.size)}</strong>
             </div>
-            <div className="flex flex-col items-center border-l border-r border-slate-100 dark:border-slate-800">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">New Size</span>
-              <span className={`text-lg font-black mt-1 ${isLargerThanOriginal ? 'text-amber-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                {formatBytes(resultBlob.size)}
-              </span>
+            <div>
+              <span>{ms ? "Saiz akhir" : "Result"}</span>
+              <strong>{formatBytes(result.blob.size)}</strong>
             </div>
-            <div className="flex flex-col items-center col-span-2 md:col-span-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Reduction</span>
-              <span className="text-lg font-black text-blue-600 dark:text-blue-400 mt-1">
-                {isLargerThanOriginal ? '0%' : `${reductionPercentage}%`}
-              </span>
+            <div>
+              <span>{ms ? "Pengurangan" : "Saved"}</span>
+              <strong className="text-blue-600">
+                {saving > 0 && saving < 0.1 ? "<0.1" : saving.toFixed(1)}%
+              </strong>
             </div>
           </div>
-
-          {isLargerThanOriginal && (
-            <div className="max-w-lg mb-6 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200 p-4 rounded-xl border border-amber-200 dark:border-amber-900 text-left flex gap-3 text-sm">
-              <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
-              <p>
-                <strong>Notice:</strong> The optimized size is slightly larger than the original. This is normal for already-optimized or simple PDFs. You can try <strong>Image-Based Compression</strong> with a lower quality or smaller resolution scale.
+          <div className="flex flex-wrap gap-3">
+            <a
+              href={downloadUrl || undefined}
+              download={
+                reduced
+                  ? file.name.replace(/\.pdf$/i, "") + "-compressed.pdf"
+                  : file.name
+              }
+              className="inline-flex items-center justify-center rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white h-11 px-5"
+            >
+              <Download size={16} className="mr-2" />
+              {ms ? "Muat turun PDF" : "Download PDF"}
+            </a>
+            <Button variant="outline" onClick={() => setResult(null)}>
+              {ms ? "Cuba tetapan lain" : "Try other settings"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFile(null);
+                setResult(null);
+              }}
+            >
+              {ms ? "Fail baharu" : "New file"}
+            </Button>
+          </div>
+        </section>
+      ) : (
+        <>
+          <div className="flex items-center gap-3 p-4 border border-slate-200 dark:border-slate-800 rounded-lg">
+            <FileText size={22} className="text-blue-600 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium break-all">{file.name}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {formatBytes(file.size)}
               </p>
             </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full max-w-md">
-            <Button onClick={() => downloadFile(resultBlob, 'compressed.pdf')} className="w-full sm:w-auto flex-grow flex items-center justify-center gap-2" size="lg">
-              <Download className="w-5 h-5" />
-              Download PDF
-            </Button>
-            <Button onClick={handleReset} variant="outline" className="w-full sm:w-auto flex items-center justify-center gap-2" size="lg">
-              <RefreshCw className="w-5 h-5" />
-              Compress Another
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto p-4 space-y-6">
-      <h1 className="text-3xl font-black text-slate-900 dark:text-white">{t.compressPdf}</h1>
-      <p className="text-slate-500 dark:text-slate-400 text-lg">{t.compressSubtitle}</p>
-      
-      {!file ? (
-        <Card>
-          <CardContent className="pt-6">
-            <FileUploader onFileSelect={handleFileSelect} />
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          {/* File Header Details */}
-          <div className="p-5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
-            <div>
-              <p className="font-bold text-slate-800 dark:text-slate-100">{file.name}</p>
-              <p className="text-sm text-slate-500 mt-1">{t.compressOriginal} {formatBytes(originalSize)}</p>
-            </div>
-            <Button variant="ghost" className="rounded-xl font-bold" onClick={handleReset}>
+            <button
+              disabled={busy}
+              className="text-xs text-blue-600 disabled:opacity-40"
+              onClick={() => {
+                setFile(null);
+                setError("");
+              }}
+            >
               {t.chooseAnother}
-            </Button>
+            </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left Column: Compression Mode Selection */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Select Compression Mode</h3>
-              
-              {/* Basic Option */}
-              <div 
-                onClick={() => setMode('basic')}
-                className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
-                  mode === 'basic' 
-                    ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/10' 
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <Zap className={`w-5 h-5 ${mode === 'basic' ? 'text-blue-600' : 'text-slate-400'}`} />
-                  <span className="font-bold text-slate-950 dark:text-white">Basic Optimization</span>
-                </div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Reduces metadata and optimizes structure. Safe, lossless, keeps text fully searchable, but cannot compress heavy embedded scanned page images.
-                </p>
-              </div>
-
-              {/* Image-Based Option */}
-              <div 
-                onClick={() => setMode('image')}
-                className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
-                  mode === 'image' 
-                    ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/10' 
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <Layers className={`w-5 h-5 ${mode === 'image' ? 'text-blue-600' : 'text-slate-400'}`} />
-                  <span className="font-bold text-slate-950 dark:text-white">Image-Based Compression</span>
-                </div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Renders pages to JPEG canvases first. Highly effective for scanned documents, books, and photo-heavy PDFs.
-                </p>
-              </div>
+          <fieldset disabled={busy}>
+            <legend className="text-sm font-medium mb-3">
+              {ms ? "Tetapan compression" : "Compression settings"}
+            </legend>
+            <div
+              className="compression-options"
+              role="radiogroup"
+              aria-label={ms ? "Preset compression" : "Compression preset"}
+            >
+              {options.map((option) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={preset === option.id}
+                  key={option.id}
+                  className="compression-option"
+                  onClick={() => setPreset(option.id)}
+                >
+                  <strong>{option.title}</strong>
+                  <p>{option.desc}</p>
+                  <small>{option.detail}</small>
+                </button>
+              ))}
             </div>
-
-            {/* Right Column: Settings & Warnings */}
-            <div className="space-y-4 bg-slate-50/50 dark:bg-slate-900/40 p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80">
-              {mode === 'basic' ? (
-                <div className="space-y-4 h-full flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <h4 className="font-bold text-slate-800 dark:text-slate-200">Mode: Basic Optimization</h4>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                      This lossless method works directly with the PDF structures. It is immediate, but cannot reduce the byte size of images.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-amber-50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900 rounded-xl p-4 text-amber-800 dark:text-amber-200 text-sm flex gap-3">
-                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <p>
-                      <strong>Note:</strong> For scanned/image-heavy PDFs, browser-only basic saving may have limited effect.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  <h4 className="font-bold text-slate-800 dark:text-slate-200">Image Compression Settings</h4>
-                  
-                  {/* Quality Selector */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Image Quality</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: 'Low', val: 0.45 },
-                        { label: 'Medium', val: 0.65 },
-                        { label: 'High', val: 0.8 },
-                      ].map((opt) => (
-                        <button
-                          key={opt.label}
-                          onClick={() => setQuality(opt.val)}
-                          className={`py-2 px-3 rounded-xl border text-sm font-bold transition-all ${
-                            quality === opt.val
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
-                          }`}
-                        >
-                          {opt.label} ({opt.val})
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Scale / Resolution Selector */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Resolution Scale</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: 'Small', val: 1.0 },
-                        { label: 'Medium', val: 1.5 },
-                        { label: 'Large', val: 2.0 },
-                      ].map((opt) => (
-                        <button
-                          key={opt.label}
-                          onClick={() => setScale(opt.val)}
-                          className={`py-2 px-3 rounded-xl border text-sm font-bold transition-all ${
-                            scale === opt.val
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
-                          }`}
-                        >
-                          {opt.label} ({opt.val}x)
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Warning label */}
-                  <div className="bg-amber-50 dark:bg-amber-950/15 border border-amber-200 dark:border-amber-900 rounded-xl p-4 text-amber-800 dark:text-amber-200 text-xs flex gap-3 leading-relaxed">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong>Important Warning:</strong> Image-based compression turns each page into a static image inside the PDF. The text will <strong>no longer be searchable, indexable, or selectable</strong>.
-                    </div>
-                  </div>
-                </div>
+          </fieldset>
+          <p className="compression-notice">
+            {preset === "text"
+              ? ms
+                ? "Mod ini tidak mengecilkan gambar scan. Gunakan Seimbang atau Saiz paling kecil untuk scan. Tiada peratus pengurangan yang dijamin."
+                : "This mode does not shrink scanned images. Use Balanced or Smallest size for scans. Savings depend on the original PDF."
+              : ms
+                ? "Halaman ditukar kepada gambar: teks tidak lagi boleh dicari atau dipilih; pautan, borang dan tandatangan digital tidak dikekalkan. Saiz fizikal halaman kekal sama."
+                : "Pages become images: text will no longer be searchable or selectable; links, forms and digital signatures are not preserved. Physical page size stays the same."}
+          </p>
+          {error && (
+            <p
+              role="alert"
+              className="text-sm text-red-600 border border-red-200 rounded-lg p-4"
+            >
+              {error}
+            </p>
+          )}
+          {busy && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="text-sm text-slate-500"
+            >
+              <div className="flex gap-2 items-center">
+                <LoaderCircle size={16} className="animate-spin" />
+                {progress.total
+                  ? `${ms ? "Memproses halaman" : "Processing page"} ${progress.current} / ${progress.total}`
+                  : ms
+                    ? "Menganalisis PDF…"
+                    : "Analysing PDF…"}
+              </div>
+              {progress.total > 0 && (
+                <progress
+                  className="w-full mt-3 accent-blue-600"
+                  value={progress.current}
+                  max={progress.total}
+                />
               )}
             </div>
-          </div>
-
-          {/* Action Trigger */}
-          <div className="flex flex-col items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-            {isProcessing && currentProgress && (
-              <div className="w-full max-w-md space-y-2 text-center">
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                  Processing Page {currentProgress.current} of {currentProgress.total}...
-                </p>
-                <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-blue-600 h-full transition-all duration-300" 
-                    style={{ width: `${(currentProgress.current / currentProgress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            
-            <Button 
-              onClick={processCompress} 
-              disabled={isProcessing}
-              size="lg"
-              className="w-full max-w-md font-bold text-lg h-12 rounded-xl"
-            >
-              {isProcessing 
-                ? (currentProgress ? `Compressing (${currentProgress.current}/${currentProgress.total})...` : t.compressing) 
-                : 'Optimize & Download'
-              }
-            </Button>
-          </div>
-        </div>
+          )}
+          <Button disabled={busy} onClick={run} className="w-full">
+            {busy
+              ? ms
+                ? "Sedang memproses…"
+                : "Compressing…"
+              : ms
+                ? "Compress PDF"
+                : "Compress PDF"}
+          </Button>
+        </>
       )}
     </div>
   );

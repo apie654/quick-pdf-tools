@@ -1,6 +1,7 @@
+import '../lib/pdfWorker';
 import React, { useState } from 'react';
 import { PDFDocument } from 'pdf-lib';
-import { Document, pdfjs } from 'react-pdf';
+import { Document } from 'react-pdf';
 import { FileUploader } from '../components/FileUploader';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -9,8 +10,6 @@ import { formatBytes, downloadFile } from '../lib/utils';
 import { ArrowUp, ArrowDown, CheckCircle2, Download, RefreshCw, MoveHorizontal, ListOrdered } from 'lucide-react';
 import { LazyThumbnailPageItem } from '../components/PageThumbnailGrid';
 
-// Initialize PDF.js worker using unpkg with the matching version of pdfjs
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export function RearrangePages() {
   const { t } = useLanguage();

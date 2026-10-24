@@ -1,13 +1,12 @@
+import '../lib/pdfWorker';
 import React, { useState, useEffect, useRef } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { Button } from './ui/button';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Check, Grid, RefreshCw, Square, CheckSquare } from 'lucide-react';
 
-// Initialize PDF.js worker using unpkg with the matching version of pdfjs
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface PageThumbnailGridProps {
   file: File;
