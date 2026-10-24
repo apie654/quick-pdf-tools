@@ -2,10 +2,9 @@ import { PDFDocument } from "pdf-lib";
 import { pdfjs } from "./pdfWorker";
 
 export const presets = {
-  text: { dpi: 0, quality: 1 },
-  balanced: { dpi: 120, quality: 0.65 },
-  strong: { dpi: 85, quality: 0.42 },
-  clear: { dpi: 160, quality: 0.82 },
+  small: { dpi: 160, quality: 0.82 },
+  medium: { dpi: 120, quality: 0.65 },
+  high: { dpi: 85, quality: 0.42 },
 } as const;
 export type CompressionPreset = keyof typeof presets;
 export type CompressionResult = {
@@ -43,7 +42,6 @@ export async function compressPdf(
       method: "structure",
       pages,
     };
-  if (preset === "text") return best;
   check();
   const task = pdfjs.getDocument({ data: source.slice() });
   const abort = () => {
@@ -89,14 +87,12 @@ export async function compressPdf(
         );
         const image = await output.embedJpg(await jpeg.arrayBuffer());
         // DPI affects image resolution only, never physical page dimensions.
-        output
-          .addPage([original.width, original.height])
-          .drawImage(image, {
-            x: 0,
-            y: 0,
-            width: original.width,
-            height: original.height,
-          });
+        output.addPage([original.width, original.height]).drawImage(image, {
+          x: 0,
+          y: 0,
+          width: original.width,
+          height: original.height,
+        });
       } finally {
         canvas.width = 0;
         canvas.height = 0;

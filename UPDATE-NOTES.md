@@ -1,27 +1,19 @@
-# Quick PDF redesign and compression update
+# Quick PDF compression levels
 
-## Changes
-- Minimal neutral design with a green accent, responsive cards, English/BM, and light/dark themes.
-- All nine existing tools retained.
-- Four compression presets: Keep text, Balanced, Smallest size, Higher clarity.
-- Enable compressed object streams for text-preserving optimisation.
-- For image modes, compare original, structure-optimised and rasterised PDFs; return the smallest.
-- Preserve physical page dimensions independently of rendering DPI.
-- Bound canvas size and release resources after each page; stop on navigation.
-- Bundle the matching PDF.js worker locally instead of fetching it from a CDN.
-- Show honest results when a PDF cannot be reduced; preserve original filename if returning original.
+The compression tool offers three levels, from lightest to strongest:
 
-## Validation
-- Production build and TypeScript check passed.
-- Browser checks: English/BM, light/dark, text and scanned PDF workflows.
-- Two-page mixed portrait/landscape digital PDF: 4,689 -> 2,661 bytes; searchable text and page dimensions verified.
-- Compact PDF: original returned, 2,661 bytes, no size increase.
-- Generated scanned test PDF: 1,527,509 bytes -> 247,919 (Balanced), 102,021 (Smallest), 568,359 (Higher clarity).
-- Generated outputs reopened and dimensions checked; Balanced sample rendered and visually inspected.
-- Invalid PDF rejected.
-- Cloud-browser download capture timed out; downloaded-file delivery could not be verified in that environment. Generated Blob contents were independently reopened and validated.
+| Level | Compression | Rendering | JPEG quality |
+| --- | --- | --- | --- |
+| Small | Minimum; prioritise clarity | 160 DPI | 82% |
+| Medium | Moderate; selected by default | 120 DPI | 65% |
+| High | Maximum; prioritise smaller files | 85 DPI | 42% |
 
-Image modes turn pages into JPEG images; text selection/search, forms, hyperlinks and digital signatures are not preserved. Reduction depends on the source document. Re-saving signed PDFs can invalidate signatures even in Keep text mode.
+Each level recompresses scanned pages and images. Original physical page sizes are preserved. Pages become images, so searchable/selectable text, interactive forms, hyperlinks and digital signatures are not preserved. Smaller text can be less clear with High. Savings depend on the source PDF; the smallest of the original, structure-optimised and image-based candidates is returned.
 
-## Use
-Replace the project source with this package, then run `npm ci` and `npm run build`. Existing Vercel deployment settings can remain unchanged. No backend is required.
+Results identify the selected level. If there is no reduction, Small offers a shortcut to Medium and Medium offers a shortcut to High, with settings shown before the next compression run.
+
+Validation: production build, TypeScript and browser selection/result checks. Compression levels were also exercised against the seven-page uploaded PDF using the application's compression function with a Node canvas adapter.
+
+The remaining eight PDF tools, English/BM support and light/dark themes are retained. PDF.js and its matching worker are bundled locally.
+
+Install with `npm ci`, then build with `npm run build`. Existing Vercel settings can remain unchanged.
